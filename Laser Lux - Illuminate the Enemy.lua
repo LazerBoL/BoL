@@ -6,11 +6,14 @@
 | |_( )( (_| |\__, \(  ___/| |      | |_( )| (_) | >  <            
 (____/'`\__,_)(____/`\____)(_)      (____/'`\___/'(_/\_)     
 
---Report:
-Cast Skill hut
-Nen su~a logic ultimate
+Changelog: 
+	1.01:
+		-Added Jungle Steal feature
+		-Add auto use Ultimate if can hit x enemy around
+	1.00:
+		-Release
 --]]
-local currVersion = "1.00"
+local currVersion = "1.01"
 _G.Lux_Autoupdate = true
 
 if myHero.charName ~= "Lux" then return end
@@ -118,7 +121,7 @@ function OnLoad()
 	-- Minion & Jungle Mob
 	EnemyMinion = minionManager(MINION_ENEMY,Spell.Q.range,myHero,MINION_SORT_HEALTH_ASC)
 	JungMinion = minionManager(MINION_JUNGLE, Spell.Q.range, myHero, MINION_SORT_MAXHEALTH_DEC)
-	
+	StealMinion = minionManager(MINION_JUNGLE,Spell.R.range,myHero,MINION_SORT_HEALTH_ASC)
 	--}
 	
 	--{ Create Menu
@@ -137,6 +140,8 @@ function OnLoad()
 		Menu.General:addParam("Harass","Harass",SCRIPT_PARAM_ONKEYDOWN,false,string.byte("C"))
 		Menu.General:addParam("Shield","Manual Shield",SCRIPT_PARAM_ONKEYDOWN,false,string.byte("X"))
 		Menu.General:addParam("Farm","Farm/Jungle",SCRIPT_PARAM_ONKEYDOWN,false,string.byte("V"))
+		Menu.General:addParam("Steal1","Steal press",SCRIPT_PARAM_ONKEYDOWN,false,string.byte("Z"))
+		Menu.General:addParam("Steal2","Steal toggle",SCRIPT_PARAM_ONKEYTOGGLE,false,string.byte("N"))
 		--}
 		
 		--{ Target Selector
@@ -156,6 +161,7 @@ function OnLoad()
 		Menu.Combo:addParam("E","Use E in combo",SCRIPT_PARAM_ONOFF,true)
 		Menu.Combo:addParam("I","Use item in combo",SCRIPT_PARAM_ONOFF,true)
 		Menu.Combo:addParam("R","Cast Ultimate mode",SCRIPT_PARAM_LIST,1,{"Killable enemy","Combo","Always Use","None"})
+		Menu.Combo:addParam("AutoR","Auto use R if can hit",SCRIPT_PARAM_LIST,3,{"None",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
 		--}
 		
 		--{ Harass Settings
@@ -169,6 +175,10 @@ function OnLoad()
 		Menu.Farm:addParam("Q","Use Q to 'Farm/Jungle'",SCRIPT_PARAM_ONOFF,true)
 		Menu.Farm:addParam("E","Use E to 'Farm/Jungle'",SCRIPT_PARAM_ONOFF,true)
 		Menu.Farm:addParam("Mana","Don't farm if mana < %",SCRIPT_PARAM_SLICE,20,0,100)
+		Menu.Farm:addSubMenu("Steal with R","Steal")
+		Menu.Farm.Steal:addParam("important","Baron/Dragon steal",SCRIPT_PARAM_ONOFF,true)
+		Menu.Farm.Steal:addParam("blue","steal blue buff",SCRIPT_PARAM_ONOFF,false)
+		Menu.Farm.Steal:addParam("red","steal red buff",SCRIPT_PARAM_ONOFF,false)
 		--}
 		
 		--{ Shield Settings
@@ -243,10 +253,13 @@ function OnLoad()
 		Menu.Script:permaShow("Author")
 		Menu.General:permaShow("Combo")
 		Menu.Combo:permaShow("R")
+		Menu.Combo:permaShow("AutoR")
 		Menu.General:permaShow("Harass")
 		Menu.General:permaShow("Shield")
 		Menu.General:permaShow("Farm")
-		Menu.Draw.Skill:permaShow("WInfo")
+		Menu.General:permaShow("Steal1")
+		Menu.General:permaShow("Steal2")
+		Menu.Draw.Skill:permaShow("EInfo")
 		if VIP_USER then
 			Menu.Predict:permaShow("Mode")
 		end
@@ -387,7 +400,7 @@ function QLineCast(unit)
 		if #ColTable <= 1 then
 			-- VPrediction
 			if Menu.Predict.Mode == 1 then
-				CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.Q.delay, Spell.Q.width, Spell.Q.range, Spell.Q.speed)
+				local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.Q.delay, Spell.Q.width, Spell.Q.range, Spell.Q.speed,myHero)
 				if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
 					SpellCast(_Q,CastPosition)
 				end
@@ -422,7 +435,7 @@ function WLineCast(unit)
 	if VIP_USER then
 		-- VPrediction
 		if Menu.Predict.Mode == 1 then
-			CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.W.delay, Spell.W.width, Spell.W.range, Spell.W.speed)
+			CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.W.delay, Spell.W.width, Spell.W.range, Spell.W.speed,myHero)
 			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
 				SpellCast(_W,CastPosition)
 			end
@@ -453,14 +466,18 @@ end
 
 function ECircularCast(unit)
 	if VIP_USER then
-		if Menu.Predict.Mode == 1 then
-		--VPredict already have MEC
-			local CastPosition,HitChance,points = VP:GetCircularCastPosition(unit, Spell.E.delay, Spell.E.width, Spell.E.range, Spell.E.speed)
-			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
-				SpellCast(_E,CastPosition)
-			end
+		-- All Prediction: use VPrediction to check MEC
+		local mainCastPosition, mainHitChance, points, mainPosition = VP:GetCircularAOECastPosition(unit, Spell.E.delay, Spell.E.width, Spell.E.range, Spell.E.speed, myHero)
+		if mainCastPosition ~= nil and mainHitChance > 2 and points > 1 then
+			SpellCast(_E,mainCastPosition)
 		else
-			--Other Predict: use VPrediction to check MEC
+			if Menu.Predict.Mode == 1 then
+			--VPredict already have MEC
+				local CastPosition,HitChance,points = VP:GetCircularCastPosition(unit, Spell.E.delay, Spell.E.width, Spell.E.range, Spell.E.speed,myHero)
+				if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
+					SpellCast(_E,CastPosition)
+				end
+			else
 				--Prodiction
 				if Menu.Predict.Mode == 2 then
 					local CastPosition = ProdictE:GetPrediction(unit)
@@ -475,6 +492,7 @@ function ECircularCast(unit)
 						SpellCast(_E,CastPosition)
 					end
 				end
+			end
 		end
 	else
 		--Free Prediction
@@ -486,26 +504,26 @@ function ECircularCast(unit)
 end
 function RLineCast(unit)
 	if VIP_USER then
-			-- VPrediction
+		-- VPrediction
 		if Menu.Predict.Mode == 1 then
-			CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed)
-				if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
-					SpellCast(_R,CastPosition)
-				end
-			-- Prodiction
-			elseif Menu.Predict.Mode == 2 then
-				local CastPosition = ProdictR:GetPrediction(unit)
-				if CastPosition ~= nil then
-					SpellCast(_R,CastPosition)
-				end		
-			-- VIP Prediction
-			elseif Menu.Predict.Mode == 3 then
-				local CastPosition = VipPredictR:GetPrediction(unit)
-				local HitChance = VipPredictR:GetHitChance(unit)
-				if CastPosition ~= nil and HitChance > Menu.Predict.VIPHitChance then
-					SpellCast(_R,CastPosition)
-				end
+			local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed,myHero)
+			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
+				SpellCast(_R,CastPosition)
 			end
+		-- Prodiction
+		elseif Menu.Predict.Mode == 2 then
+			local CastPosition = ProdictR:GetPrediction(unit)
+			if CastPosition ~= nil then
+				SpellCast(_R,CastPosition)
+			end		
+		-- VIP Prediction
+		elseif Menu.Predict.Mode == 3 then
+			local CastPosition = VipPredictR:GetPrediction(unit)
+			local HitChance = VipPredictR:GetHitChance(unit)
+			if CastPosition ~= nil and HitChance > Menu.Predict.VIPHitChance then
+				SpellCast(_R,CastPosition)
+			end
+		end
 	else
 		--Free prediction
 		local CastPosition = FreePredictR:GetPrediction(unit)
@@ -638,6 +656,21 @@ function OnTick()
 		end
 	end
 	--}
+	--{ Auto Use R/Ultimate
+	if Menu.Combo.AutoR > 1 then
+		
+		local minTarget = Menu.Combo.AutoR - 2
+		for i = 1, heroManager.iCount do
+			local hero = heroManager:GetHero(i)
+			if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) then
+				mainCastPosition, mainHitChance, maxHit, Positions = VP:GetLineAOECastPosition(hero, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed, myHero)
+				if mainCastPosition ~= nil and maxHit > minTarget and mainHitChance >=2 then
+					SpellCast(_R,mainCastPosition)
+				end
+			end
+		end
+	end
+	--}
 	
 	--{ Harass
 	if Menu.General.Harass and ValidTarget(TARGET) then
@@ -710,18 +743,60 @@ function OnTick()
 		--Jungle
 		JungMinion:update()
 		if ValidTarget(JungMinion.objects[1],Spell.Q.range) then
-      if Menu.Farm.Q and QREADY then
+			if Menu.Farm.Q and QREADY then
 				SpellCast(_Q,JungMinion.objects[1])
-      end
-      if Menu.Farm.E and myHero:CanUseSpell(_E) == READY and ValidTarget(JungMinion.objects[1],Spell.E.range) then
-				if objE ~= nil and GetDistanceSqr(objE,JungMinion.objects[1]) <= Spell.E.width * Spell.E.width then
-					CastSpell(_E)
-				else
-					SpellCast(_E,JungMinion.objects[1])
+			end
+		if Menu.Farm.E and myHero:CanUseSpell(_E) == READY and ValidTarget(JungMinion.objects[1],Spell.E.range) then
+			if objE ~= nil and GetDistanceSqr(objE,JungMinion.objects[1]) <= Spell.E.width * Spell.E.width then
+				CastSpell(_E)
+			else
+				SpellCast(_E,JungMinion.objects[1])
+			end
+		end
+		myHero:Attack(JungMinion.objects[1])
+	end
+end
+	--}
+	
+	--{ Jungle Steal
+	if Menu.General.Steal1 or Menu.General.Steal2 then
+		StealMinion:update()
+		if Menu.Farm.Steal.important then
+			--Steal dragon/baron
+			stealObj = nil
+			for i, minion in pairs(StealMinion.objects) do
+				if minion.maxHealth > 4000 then
+					stealObj = minion
 				end
-      end
-			myHero:Attack(JungMinion.objects[1])
-    end
+			end
+			if stealObj ~= nil and stealObj.health < getDmg("R",stealObj,myHero) and GetDistanceSqr(myHero,stealObj) <= Spell.R.range * Spell.R.range then
+				SpellCast(_R,stealObj)
+			end
+		end
+		
+		if Menu.Farm.Steal.blue then
+			--Steal blue buff
+			blueObj = nil
+			for i, minion in pairs(StealMinion.objects) do
+				if minion.name == "AncientGolem1.1.1" or minion.name == "AncientGolem7.1.1" then
+					blueObj = minion
+				end
+			end
+			if blueObj ~= nil and blueObj.health < getDmg("R",blueObj,myHero) and GetDistanceSqr(myHero,blueObj) <= Spell.R.range * Spell.R.range then
+				SpellCast(_R,blueObj)
+			end			
+		end
+		if Menu.Farm.Steal.red then
+			redObj = nil
+			for i, minion in pairs(StealMinion.objects) do
+				if minion.name == "LizardElder4.1.1" or minion.name == "LizardElder10.1.1" then
+					redObj = minion
+				end
+			end
+			if redObj ~= nil and redObj.health < getDmg("R",redObj,myHero) and GetDistanceSqr(myHero,redObj) <= Spell.R.range * Spell.R.range then
+				SpellCast(_R,redObj)
+			end
+		end
 	end
 	--}
 	
