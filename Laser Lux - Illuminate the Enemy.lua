@@ -7,13 +7,20 @@
 (____/'`\__,_)(____/`\____)(_)      (____/'`\___/'(_/\_)     
 
 Changelog: 
+	1.02
+		-Combo now will use Q,AA,E,AA if possible
+		-Steal blue now will use Q/E if killable and when in range instead of only use ultimate:
+		-Add auto use R on stun target, will use R on  stunned/immobilized/rooted/snared/suppressed target if there are > 0 amount of your ally are near(include you) or killable target
+		-Change 'auto use R if can hit x enemy' to only use if  > 0 amount of your ally are near(include you) or killable target.
+		-Fixed bug with auto ignite.
+		-Fixed auto pop E feature sometimes doesn't pop when enemy in range.
 	1.01:
 		-Added Jungle Steal feature
 		-Add auto use Ultimate if can hit x enemy around
 	1.00:
 		-Release
 --]]
-local currVersion = "1.01"
+local currVersion = "1.02"
 _G.Lux_Autoupdate = true
 
 if myHero.charName ~= "Lux" then return end
@@ -91,6 +98,7 @@ function LuxData()
 	objE = nil
 	objQ = nil
 	Recalling = false
+	QCasting = 0
 	Spell = {
 		Q = {range = 1300, delay = 0.25, speed = 1200, width = 80},
 		W = {range = 1175, delay = 0.25, speed = 1400, width = 110},
@@ -160,8 +168,15 @@ function OnLoad()
 		Menu.Combo:addParam("Q","Use Q in combo",SCRIPT_PARAM_ONOFF,true)
 		Menu.Combo:addParam("E","Use E in combo",SCRIPT_PARAM_ONOFF,true)
 		Menu.Combo:addParam("I","Use item in combo",SCRIPT_PARAM_ONOFF,true)
-		Menu.Combo:addParam("R","Cast Ultimate mode",SCRIPT_PARAM_LIST,1,{"Killable enemy","Combo","Always Use","None"})
-		Menu.Combo:addParam("AutoR","Auto use R if can hit",SCRIPT_PARAM_LIST,3,{"None",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
+		
+		Menu.Combo:addSubMenu("Q - LightBinding Settings","Lig")
+		Menu.Combo.Lig:addParam("Near","Auto Q when enemy is near",SCRIPT_PARAM_ONOFF,true)
+		Menu.Combo:addSubMenu("R - Ultimate Settings","Ult")
+		Menu.Combo.Ult:addParam("R","Cast Ultimate mode",SCRIPT_PARAM_LIST,1,{"Killable enemy","Combo","Always Use","None"})
+		if VIP_USER then
+			Menu.Combo.Ult:addParam("AutoR","Auto use R if can hit",SCRIPT_PARAM_LIST,3,{"None",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
+		end
+		Menu.Combo.Ult:addParam("AutoRStun","Auto use R on stun target",SCRIPT_PARAM_ONOFF,true)
 		--}
 		
 		--{ Harass Settings
@@ -175,7 +190,7 @@ function OnLoad()
 		Menu.Farm:addParam("Q","Use Q to 'Farm/Jungle'",SCRIPT_PARAM_ONOFF,true)
 		Menu.Farm:addParam("E","Use E to 'Farm/Jungle'",SCRIPT_PARAM_ONOFF,true)
 		Menu.Farm:addParam("Mana","Don't farm if mana < %",SCRIPT_PARAM_SLICE,20,0,100)
-		Menu.Farm:addSubMenu("Steal with R","Steal")
+		Menu.Farm:addSubMenu("Steal with skill","Steal")
 		Menu.Farm.Steal:addParam("important","Baron/Dragon steal",SCRIPT_PARAM_ONOFF,true)
 		Menu.Farm.Steal:addParam("blue","steal blue buff",SCRIPT_PARAM_ONOFF,false)
 		Menu.Farm.Steal:addParam("red","steal red buff",SCRIPT_PARAM_ONOFF,false)
@@ -226,7 +241,6 @@ function OnLoad()
 		--{ Extra Settings
 		Menu:addSubMenu("[ Lux : Extra Settings ]","Extra")
 		Menu.Extra:addParam("AutoI","Auto Ignite on killable enemy",SCRIPT_PARAM_ONOFF,true)
-		Menu.Extra:addParam("AutoQ","Auto Q when enemy hero near Lux",SCRIPT_PARAM_ONOFF,true)
 		Menu.Extra:addParam("PopE","Auto pop E when enemy in range",SCRIPT_PARAM_ONOFF,true)
 		if VIP_USER then
 			Menu.Extra:addParam("Packet","Use Packet to cast spell",SCRIPT_PARAM_ONOFF,false)
@@ -252,8 +266,10 @@ function OnLoad()
 		--{ Perma Show
 		Menu.Script:permaShow("Author")
 		Menu.General:permaShow("Combo")
-		Menu.Combo:permaShow("R")
-		Menu.Combo:permaShow("AutoR")
+		Menu.Combo.Ult:permaShow("R")
+		if VIP_USER then
+		Menu.Combo.Ult:permaShow("AutoR")
+		end
 		Menu.General:permaShow("Harass")
 		Menu.General:permaShow("Shield")
 		Menu.General:permaShow("Farm")
@@ -300,6 +316,17 @@ function CountEnemyInRange(target,range)
 	for i = 1, heroManager.iCount do
 		local hero = heroManager:GetHero(i)
 		if hero.team ~= myHero.team and hero.visible and not hero.dead and GetDistanceSqr(target,hero) <= range*range then
+			count = count + 1
+		end
+	end
+	return count
+end
+-- Allies in range
+function CountAllyInRange(target,range)
+	local count = 0
+	for i = 1, heroManager.iCount do
+		local hero = heroManager:GetHero(i)
+		if hero.team == myHero.team and hero.visible and not hero.dead and GetDistanceSqr(target,hero) <= range*range then
 			count = count + 1
 		end
 	end
@@ -435,7 +462,7 @@ function WLineCast(unit)
 	if VIP_USER then
 		-- VPrediction
 		if Menu.Predict.Mode == 1 then
-			CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.W.delay, Spell.W.width, Spell.W.range, Spell.W.speed,myHero)
+			local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.W.delay, Spell.W.width, Spell.W.range, Spell.W.speed,myHero)
 			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
 				SpellCast(_W,CastPosition)
 			end
@@ -465,6 +492,7 @@ function WLineCast(unit)
 end
 
 function ECircularCast(unit)
+	if objE ~= nil then return end
 	if VIP_USER then
 		-- All Prediction: use VPrediction to check MEC
 		local mainCastPosition, mainHitChance, points, mainPosition = VP:GetCircularAOECastPosition(unit, Spell.E.delay, Spell.E.width, Spell.E.range, Spell.E.speed, myHero)
@@ -504,8 +532,14 @@ function ECircularCast(unit)
 end
 function RLineCast(unit)
 	if VIP_USER then
+		local isDashing, canHit, position = VP:IsDashing(unit, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, myHero)
+		local isImmobile, position2 = VP:IsImmobile(unit, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, myHero)
+		if isDashing and canHit and position ~= nil then
+			SpellCast(_R,position)
+		elseif isImmobile and position2 ~= nil then
+			SpellCast(_R,position2)
 		-- VPrediction
-		if Menu.Predict.Mode == 1 then
+		elseif Menu.Predict.Mode == 1 then
 			local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed,myHero)
 			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
 				SpellCast(_R,CastPosition)
@@ -527,6 +561,11 @@ function RLineCast(unit)
 	else
 		--Free prediction
 		local CastPosition = FreePredictR:GetPrediction(unit)
+		if TargetHaveBuff("stun",unit) or TargetHaveBuff("LuxLightBindingMis",unit) or TargetHaveBuff("suppression",unit)
+			or TargetHaveBuff("RunePrison",unit) or TargetHaveBuff("DarkBindingMissile",unit) or TargetHaveBuff("caitlynyordletrapdebuff",unit)
+			or TargetHaveBuff("CurseoftheSadMummy",unit) then
+			SpellCast(_R,unit)
+		end
 		if CastPosition ~= nil then
 			SpellCast(_R,CastPosition)
 		end
@@ -587,10 +626,21 @@ function OnTick()
 	Ally = GrabAlly(Spell.W.range)
 	
 	--}
+	--{ Auto Pop E when enemy in range
+	if Menu.Extra.PopE then
+		for i = 1, heroManager.iCount do
+			local hero = heroManager:GetHero(i)
+			local radius = Spell.E.width + VP:GetHitBox(hero)
+			if hero.team ~= myHero.team and objE ~= nil and ValidTarget(hero) and GetDistanceSqr(objE,hero) <= radius * radius then
+				CastSpell(_E)
+			end
+		end
+	end
+		--}
 	
-	
-	--{ Auto Q when enemy hero are near
-	if Menu.Extra.AutoQ then
+	--{ Auto Q 
+	-- When enemy hero are near
+	if Menu.Combo.Lig.Near then
 		for i = 1, heroManager.iCount do
 			local hero = heroManager:GetHero(i)
 			if hero.team ~= myHero.team and ValidTarget(hero,400) then
@@ -598,15 +648,24 @@ function OnTick()
 			end
 		end
 	end
-	--}
-	
-	--{ Auto Pop E when enemy in range
-	if Menu.Extra.PopE then
-		for i = 1, heroManager.iCount do
-			local hero = heroManager:GetHero(i)
-			if hero.team ~= myHero.team and objE ~= nil and ValidTarget(hero) and GetDistanceSqr(objE,hero) <= Spell.E.width * Spell.E.width then
-				CastSpell(_E)
+	-- On Gap closer
+	if VIP_USER then
+		if Menu.Combo.Lig.GapCloser and TARGET then
+			for i = 1, heroManager.iCount do
+				local hero = heroManager:GetHero(i)
+				if hero.team ~= myHero.team and ValidTarget(hero,400) then
+					local isDashing, canHit, position = VP:IsDashing(TARGET, Spell.Q.delay + 0.07 + GetLatency() / 2000, Spell.Q.width, Spell.Q.speed, myHero)
+					if position ~= nil then
+						local isCol,ColTable = Col:GetCollision(myHero,position)
+						if #ColTable <= 1 then
+							if isDashing and GetDistanceSqr(myHero,position) < Spell.Q.range * Spell.Q.range and canHit then
+								SpellCast(_Q,position)
+							end
+						end
+					end
+				end
 			end
+			
 		end
 	end
 	--}
@@ -625,53 +684,88 @@ function OnTick()
 				end
 			end
 			
+			if Menu.Combo.Q and GetDistanceSqr(myHero,TARGET) <= Spell.Q.range * Spell.Q.range then
+				QLineCast(TARGET)
+			end
+			
+			if Menu.Combo.E and GetDistanceSqr(myHero,TARGET) <= Spell.E.range * Spell.E.range and (not QREADY and objQ == nil or not Menu.Combo.Q)  then
+				ECircularCast(TARGET)
+			end
+			
 			if IsIlluminate(TARGET) or not (QREADY and EREADY) then
 				OW:EnableAttacks()
 			end
 			
-			if Menu.Combo.Q and GetDistanceSqr(myHero,TARGET) <= Spell.Q.range * Spell.Q.range then
-				QLineCast(TARGET)
-			end
-			if Menu.Combo.E and GetDistanceSqr(myHero,TARGET) <= Spell.E.range * Spell.E.range then
-				ECircularCast(TARGET)
-			end
-			
 		end
-		if Menu.Combo.R == 1 then
+		if Menu.Combo.Ult.R == 1 then
 			for i = 1, heroManager.iCount do
 				local hero = heroManager:GetHero(i)
 				if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) and getDmg("R",hero,myHero) > hero.health then
 					RLineCast(hero)
 				end
 			end
-		elseif Menu.Combo.R == 2 then
-			RLineCast(TARGET)
-		elseif Menu.Combo.R == 3 then
-				for i = 1, heroManager.iCount do
+		elseif Menu.Combo.Ult.R == 2 then
+			if VIP_USER and ValidTarget(TARGET) then
+				local isImmobile, position = VP:IsImmobile(TARGET, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, myHero)
+				if isImmobile and position ~= nil then
+					RLineCast(TARGET)
+				end
+			else
+				if TargetHaveBuff("stun",TARGET) or TargetHaveBuff("LuxLightBindingMis",TARGET) or TargetHaveBuff("suppression",TARGET)
+					or TargetHaveBuff("RunePrison",TARGET) or TargetHaveBuff("DarkBindingMissile",TARGET) or TargetHaveBuff("caitlynyordletrapdebuff",TARGET)
+					or TargetHaveBuff("CurseoftheSadMummy",TARGET) then
+					SpellCast(_R,TARGET)
+				end
+			end
+		elseif Menu.Combo.Ult.R == 3 then
+			for i = 1, heroManager.iCount do
 				local hero = heroManager:GetHero(i)
 				if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) then
 					RLineCast(hero)
 				end
-			end
+			end		
 		end
 	end
 	--}
-	--{ Auto Use R/Ultimate
-	if Menu.Combo.AutoR > 1 then
-		
-		local minTarget = Menu.Combo.AutoR - 2
+	
+	--{ Auto Use R on stunned target
+	if Menu.Combo.Ult.AutoRStun then
 		for i = 1, heroManager.iCount do
 			local hero = heroManager:GetHero(i)
 			if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) then
-				mainCastPosition, mainHitChance, maxHit, Positions = VP:GetLineAOECastPosition(hero, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed, myHero)
-				if mainCastPosition ~= nil and maxHit > minTarget and mainHitChance >=2 then
-					SpellCast(_R,mainCastPosition)
+				if VIP_USER then
+					local isImmobile, position = VP:IsImmobile(hero, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, Spell.R.sourcePosition)
+					if isImmobile and position ~= nil and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) ) then
+						SpellCast(_R,position)
+					end
+				else
+					if TargetHaveBuff("stun",hero) or TargetHaveBuff("LuxLightBindingMis",hero) or TargetHaveBuff("suppression",hero)
+					or TargetHaveBuff("RunePrison",hero) or TargetHaveBuff("DarkBindingMissile",hero) or TargetHaveBuff("caitlynyordletrapdebuff",hero)
+					or TargetHaveBuff("CurseoftheSadMummy",hero) and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) ) then
+						SpellCast(_R,hero)
+					end
 				end
 			end
 		end
 	end
 	--}
 	
+	--{ Auto Use R/Ultimate if x enemy around
+	if VIP_USER then
+		if Menu.Combo.Ult.AutoR > 1 then
+			local minTarget = Menu.Combo.Ult.AutoR - 2
+			for i = 1, heroManager.iCount do
+				local hero = heroManager:GetHero(i)
+				if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) ) then
+					mainCastPosition, mainHitChance, maxHit, Positions = VP:GetLineAOECastPosition(hero, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed, myHero)
+					if mainCastPosition ~= nil and maxHit > minTarget and mainHitChance >=2 then
+						SpellCast(_R,mainCastPosition)
+					end
+				end
+			end
+		end
+	end
+	--}
 	--{ Harass
 	if Menu.General.Harass and ValidTarget(TARGET) then
 		if Menu.Harass.Q then
@@ -708,44 +802,44 @@ function OnTick()
 	if Menu.General.Farm then		
 		--Farm
 		EnemyMinion:update()
-			if myHero.mana/myHero.maxMana * 100 > Menu.Farm.Mana and ValidTarget(EnemyMinion.objects[1],Spell.Q.range) then
-				if QREADY and Menu.Farm.Q then
-					if VIP_USER then
-						local qDmg = getDmg("Q",EnemyMinion.objects[1],myHero)
-						local isCol,ColTable = Col:GetCollision(myHero,EnemyMinion.objects[1])
-						if #ColTable == 0 and qDmg > EnemyMinion.objects[1].health then
-							SpellCast(_Q,EnemyMinion.objects[1])
-						elseif #ColTable == 1 and qDmg * 0.5 > EnemyMinion.objects[1].health then
-							SpellCast(_Q,EnemyMinion.objects[1])
-						end
-					else
-						--Free user
-						if getDmg("Q",EnemyMinion.objects[1],myHero) >= EnemyMinion.objects[1].health and not GetMinionCollision(myHero,EnemyMinion.objects[1],Spell.Q.width) then 
-							SpellCast(_Q,EnemyMinion.objects[1])
-						end
+		if myHero.mana/myHero.maxMana * 100 > Menu.Farm.Mana and ValidTarget(EnemyMinion.objects[1],Spell.Q.range) then
+			if QREADY and Menu.Farm.Q then
+				if VIP_USER then
+					local qDmg = getDmg("Q",EnemyMinion.objects[1],myHero)
+					local isCol,ColTable = Col:GetCollision(myHero,EnemyMinion.objects[1])
+					if #ColTable == 0 and qDmg > EnemyMinion.objects[1].health then
+						SpellCast(_Q,EnemyMinion.objects[1])
+					elseif #ColTable == 1 and qDmg * 0.5 > EnemyMinion.objects[1].health then
+						SpellCast(_Q,EnemyMinion.objects[1])
+					end
+				else
+					--Free user
+					if getDmg("Q",EnemyMinion.objects[1],myHero) >= EnemyMinion.objects[1].health and not GetMinionCollision(myHero,EnemyMinion.objects[1],Spell.Q.width) then 
+						SpellCast(_Q,EnemyMinion.objects[1])
 					end
 				end
-				if myHero:CanUseSpell(_E) == READY and ValidTarget(EnemyMinion.objects[1],Spell.E.range) and Menu.Farm.E then
-					if getDmg("E",EnemyMinion.objects[1],myHero) >= EnemyMinion.objects[1].health + 100 then 
-						if objE == nil then
-							SpellCast(_E,EnemyMinion.objects[1])
-						end
+			end
+			if myHero:CanUseSpell(_E) == READY and ValidTarget(EnemyMinion.objects[1],Spell.E.range) and Menu.Farm.E then
+				if getDmg("E",EnemyMinion.objects[1],myHero) >= EnemyMinion.objects[1].health + 100 then 
+					if objE == nil then
+						SpellCast(_E,EnemyMinion.objects[1])
 					end
-					if getDmg("E",EnemyMinion.objects[1],myHero) >= EnemyMinion.objects[1].health then
-						if objE ~= nil then
-							CastSpell(_E)
-						end
+				end
+				if getDmg("E",EnemyMinion.objects[1],myHero) >= EnemyMinion.objects[1].health then
+					if objE ~= nil then
+						CastSpell(_E)
 					end
+				end
 					
-				end
-			end	
-		
+			end
+		end
 		--Jungle
 		JungMinion:update()
 		if ValidTarget(JungMinion.objects[1],Spell.Q.range) then
 			if Menu.Farm.Q and QREADY then
 				SpellCast(_Q,JungMinion.objects[1])
 			end
+		end
 		if Menu.Farm.E and myHero:CanUseSpell(_E) == READY and ValidTarget(JungMinion.objects[1],Spell.E.range) then
 			if objE ~= nil and GetDistanceSqr(objE,JungMinion.objects[1]) <= Spell.E.width * Spell.E.width then
 				CastSpell(_E)
@@ -753,9 +847,12 @@ function OnTick()
 				SpellCast(_E,JungMinion.objects[1])
 			end
 		end
-		myHero:Attack(JungMinion.objects[1])
+			
+		if OW:CanAttack() and ValidTarget(JungMinion.objects[1],myHero.range + 50)  then
+			myHero:Attack(JungMinion.objects[1])
+		end		
 	end
-end
+
 	--}
 	
 	--{ Jungle Steal
@@ -769,8 +866,23 @@ end
 					stealObj = minion
 				end
 			end
-			if stealObj ~= nil and stealObj.health < getDmg("R",stealObj,myHero) and GetDistanceSqr(myHero,stealObj) <= Spell.R.range * Spell.R.range then
-				SpellCast(_R,stealObj)
+			if ValidTarget(stealObj) then
+				if objE ~= nil or QREADY or EREADY and GetDistanceSqr(myHero,stealObj) < Spell.Q.range * Spell.Q.range then
+					if objE ~= nil and stealObj.health < getDmg("E",stealObj,myHero) and GetDistanceSqr(objE,stealObj) <= Spell.E.width * Spell.E.width then
+						CastSpell(_E)
+					elseif QREADY and stealObj.health < getDmg("Q",stealObj,myHero) and GetDistanceSqr(myHero,stealObj) <= Spell.Q.range * Spell.Q.range then
+						SpellCast(_Q,stealObj)
+					elseif EREADY and stealObj.health < getDmg("E",stealObj,myHero) and GetDistanceSqr(myHero,stealObj) <= Spell.E.range * Spell.E.range then
+						SpellCast(_E,stealObj)
+					elseif EREADY and QREADY and stealObj.health < getDmg("E",stealObj,myHero) + getDmg("Q",stealObj,myHero) and GetDistanceSqr(myHero,stealObj) <= Spell.E.range * Spell.E.range then
+						SpellCast(_Q,stealObj)
+						SpellCast(_E,stealObj)
+					end
+				else
+					if RREADY and stealObj.health < getDmg("R",stealObj,myHero) and GetDistanceSqr(myHero,stealObj) <= Spell.R.range * Spell.R.range then
+						SpellCast(_R,stealObj)
+					end	
+				end
 			end
 		end
 		
@@ -782,9 +894,24 @@ end
 					blueObj = minion
 				end
 			end
-			if blueObj ~= nil and blueObj.health < getDmg("R",blueObj,myHero) and GetDistanceSqr(myHero,blueObj) <= Spell.R.range * Spell.R.range then
-				SpellCast(_R,blueObj)
-			end			
+			if ValidTarget(blueObj) then
+				if objE ~= nil or QREADY or EREADY and GetDistanceSqr(myHero,blueObj) < Spell.Q.range * Spell.Q.range then
+					if objE ~= nil and blueObj.health < getDmg("E",blueObj,myHero) and GetDistanceSqr(objE,blueObj) <= Spell.E.width * Spell.E.width then
+						CastSpell(_E)
+					elseif QREADY and blueObj.health < getDmg("Q",blueObj,myHero) and GetDistanceSqr(myHero,blueObj) <= Spell.Q.range * Spell.Q.range then
+						SpellCast(_Q,blueObj)
+					elseif EREADY and blueObj.health < getDmg("E",blueObj,myHero) and GetDistanceSqr(myHero,blueObj) <= Spell.E.range * Spell.E.range then
+						SpellCast(_E,blueObj)
+					elseif EREADY and QREADY and blueObj.health < getDmg("E",blueObj,myHero) + getDmg("Q",blueObj,myHero) and GetDistanceSqr(myHero,blueObj) <= Spell.E.range * Spell.E.range then
+						SpellCast(_Q,blueObj)
+						SpellCast(_E,blueObj)
+					end
+				else
+					if RREADY and blueObj.health < getDmg("R",blueObj,myHero) and GetDistanceSqr(myHero,blueObj) <= Spell.R.range * Spell.R.range then
+						SpellCast(_R,blueObj)
+					end	
+				end
+			end
 		end
 		if Menu.Farm.Steal.red then
 			redObj = nil
@@ -793,8 +920,23 @@ end
 					redObj = minion
 				end
 			end
-			if redObj ~= nil and redObj.health < getDmg("R",redObj,myHero) and GetDistanceSqr(myHero,redObj) <= Spell.R.range * Spell.R.range then
-				SpellCast(_R,redObj)
+			if ValidTarget(redObj) then
+				if objE ~= nil or QREADY or EREADY and GetDistanceSqr(myHero,redObj) < Spell.Q.range * Spell.Q.range then
+					if objE ~= nil and redObj.health < getDmg("E",redObj,myHero) and GetDistanceSqr(objE,redObj) <= Spell.E.width * Spell.E.width then
+						CastSpell(_E)
+					elseif QREADY and redObj.health < getDmg("Q",redObj,myHero) and GetDistanceSqr(myHero,redObj) <= Spell.Q.range * Spell.Q.range then
+						SpellCast(_Q,redObj)
+					elseif EREADY and redObj.health < getDmg("E",redObj,myHero) and GetDistanceSqr(myHero,redObj) <= Spell.E.range * Spell.E.range then
+						SpellCast(_E,redObj)
+					elseif EREADY and QREADY and redObj.health < getDmg("E",redObj,myHero) + getDmg("Q",redObj,myHero) and GetDistanceSqr(myHero,redObj) <= Spell.E.range * Spell.E.range then
+						SpellCast(_Q,redObj)
+						SpellCast(_E,redObj)
+					end
+				else
+					if RREADY and redObj.health < getDmg("R",redObj,myHero) and GetDistanceSqr(myHero,redObj) <= Spell.R.range * Spell.R.range then
+						SpellCast(_R,redObj)
+					end	
+				end
 			end
 		end
 	end
@@ -804,7 +946,7 @@ end
 	if Menu.Extra.AutoI then
 		for i = 1, heroManager.iCount do
 			local hero = heroManager:GetHero(i)
-			if hero.team ~= myHero.team and ValidTarget(hero,650) and getDmg("IGNITE",hero,myHero) > hero.health then
+			if hero.team ~= myHero.team and ValidTarget(hero,650) and getDmg("IGNITE",hero,myHero) > hero.health and IgniteSlot ~= nil then
 				CastSpell(IgniteSlot,hero)
 			end
 		end
@@ -816,8 +958,6 @@ end
 		autoLevelSetSequence(MaxEQ)
 	end
 	--}
-	
-	
 end
 
 function OnDraw()
@@ -850,7 +990,7 @@ function OnDraw()
 end
 
 function OnCreateObj(obj)
-	if obj.name:find("LuxLightstrike") then
+	if obj.name:find("LuxLightstrike_tar_green") then
 		objE = obj
 	end
 	if obj.name:find("LuxLightBinding") then
@@ -863,7 +1003,7 @@ end
 
 
 function OnDeleteObj(obj)
-	if obj.name:find("LuxLightstrike") or (objE ~= nil and obj.name == objE.name) then
+	if obj.name:find("LuxLightstrike_tar_green") or (objE ~= nil and obj.name == objE.name) then
 		objE = nil
 	end
 	if obj.name:find("LuxLightBinding") or (objQ ~= nil and obj.name == objQ.name) then
@@ -875,6 +1015,10 @@ function OnDeleteObj(obj)
 end
 
 function OnProcessSpell(unit,spell)
+	if unit.isMe and spell.name:find("LuxLightBinding") then
+		QCasting = os.clock()
+	end
+	
 	if Menu.Shield.At and unit.team ~= myHero.team and (unit.type =="obj_AI_Hero" or unit.type == "obj_AI_Turret") then
 		local spellTarget = spell.target
 		if spellTarget == myHero and not _G.Evade then
@@ -885,6 +1029,4 @@ function OnProcessSpell(unit,spell)
 			end
 		end
 	end
-	
-	
 end
