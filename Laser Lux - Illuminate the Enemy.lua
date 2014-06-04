@@ -7,6 +7,8 @@
 (____/'`\__,_)(____/`\____)(_)      (____/'`\___/'(_/\_)     
 
 Changelog: 
+	1.04:
+		-Add VPrediction for free user
 	1.03
 		-Fixed bug auto ulti
 		-Added auto ulti if killable
@@ -44,7 +46,8 @@ if VIP_USER then
 else
 	REQUIRED_LIBS = {
 		["SOW"] = "https://raw.githubusercontent.com/Hellsing/BoL/master/common/SOW.lua",
-		["VPrediction"] = "https://raw.githubusercontent.com/Hellsing/BoL/master/common/VPrediction.lua"
+		["VPrediction"] = "https://raw.githubusercontent.com/Hellsing/BoL/master/common/VPrediction.lua",
+		["Selector"] = "https://raw.githubusercontent.com/pqmailer/BoL_Scripts/master/Paid/Selector.lua"
 	}
 end
 
@@ -121,9 +124,9 @@ function OnLoad()
 	VP = VPrediction()
 	OW = SOW(VP)
 	
+	Selector.Instance()
 	-- Target Selector
 	if VIP_USER then
-		Selector.Instance()
 		-- Collision
 		Col = Collision(Spell.Q.range,Spell.Q.speed,Spell.Q.delay,Spell.Q.width)
 	end
@@ -178,9 +181,7 @@ function OnLoad()
 		Menu.Combo.Lig:addParam("Near","Auto Q when enemy is near",SCRIPT_PARAM_ONOFF,true)
 		Menu.Combo:addSubMenu("R - Ultimate Settings","Ult")
 		Menu.Combo.Ult:addParam("R","Cast Ultimate mode",SCRIPT_PARAM_LIST,1,{"Killable enemy","Combo","Always Use","None"})
-		if VIP_USER then
-			Menu.Combo.Ult:addParam("AutoR","Auto use R if can hit",SCRIPT_PARAM_LIST,3,{"None",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
-		end
+		Menu.Combo.Ult:addParam("AutoR","Auto use R if can hit",SCRIPT_PARAM_LIST,3,{"None",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
 		Menu.Combo.Ult:addParam("AutoRStun","Auto use R on stun target",SCRIPT_PARAM_ONOFF,true)
 		Menu.Combo.Ult:addParam("AutoRKill","Auto use R if killable",SCRIPT_PARAM_ONOFF,true)
 		--}
@@ -265,7 +266,9 @@ function OnLoad()
 			Menu.Predict:addParam("VIPHitChance","    VIP HitChance: ",SCRIPT_PARAM_SLICE,0.7,0.1,1,2)
 		else
 			Menu.Predict:addParam("G","[General Prediction Settings]",SCRIPT_PARAM_INFO,"")
-			Menu.Predict:addParam("Mode","    Prediction Mode",SCRIPT_PARAM_LIST,1,{"Free Prediction"})
+			Menu.Predict:addParam("Mode","    Prediction Mode",SCRIPT_PARAM_LIST,1,{"VPrediction","Free Prediction"})
+			Menu.Predict:addParam("D","[Detail Prediction Settings]",SCRIPT_PARAM_INFO,"")
+			Menu.Predict:addParam("VPHitChance","    VPrediction HitChance",SCRIPT_PARAM_LIST,3,{"[0]Target Position","[1]Low Hitchance","[2]High Hitchance","[3]Target slowed/close","[4]Target immobile","[5]Target Dashing"})
 		end
 		--}
 		
@@ -283,9 +286,7 @@ function OnLoad()
 		Menu.General:permaShow("Steal2")
 		Menu.General:permaShow("toggleE")
 		Menu.Draw.Skill:permaShow("EInfo")
-		if VIP_USER then
-			Menu.Predict:permaShow("Mode")
-		end
+		Menu.Predict:permaShow("Mode")
 		Menu.Extra:permaShow("PopE")
 		Menu.Extra:permaShow("AutoLevel")
 		Menu.Shield:permaShow("Auto")
@@ -421,7 +422,7 @@ end
 --{ Prediction Cast
 function SpellCast(spellSlot,castPosition)
 	if VIP_USER and Menu.Extra.Packet then
-		Packet("S_CAST", {spellId = spellSlot, fromX = castPosition.x, fromY = castPosition.z, toX = castPosition.x, toY = castPosition.z}):send()
+		Packet("S_CAST", {spellId = spell, targetNetworkId = param.networkID}):send()
 	else
 		CastSpell(spellSlot,castPosition.x,castPosition.z)
 	end
@@ -457,10 +458,18 @@ function QLineCast(unit)
 		end
 	else
 		--Free prediction
-		local CastPosition = FreePredictQ:GetPrediction(unit)
-		EnemyMinion:update()
-		if CastPosition ~= nil and not GetMinionCollision(myHero,unit,Spell.Q.width) then
-			SpellCast(_Q,CastPosition)
+		if Menu.Predict.Mode == 1 then
+			local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.Q.delay, Spell.Q.width, Spell.Q.range, Spell.Q.speed,myHero,true)
+			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
+				SpellCast(_Q,CastPosition)
+			end
+		
+		elseif Menu.Predict.Mode == 2 then
+			local CastPosition = FreePredictQ:GetPrediction(unit)
+			EnemyMinion:update()
+			if CastPosition ~= nil and not GetMinionCollision(myHero,unit,Spell.Q.width) then
+				SpellCast(_Q,CastPosition)
+			end
 		end
 	end
 end
@@ -474,26 +483,35 @@ function WLineCast(unit)
 				SpellCast(_W,CastPosition)
 			end
 				
-			-- Prodiction
-			elseif Menu.Predict.Mode == 2 then
-				local CastPosition = ProdictW:GetPrediction(unit)
-				if CastPosition ~= nil then
-					SpellCast(_W,CastPosition)
-				end
-				
-			-- VIP Prediction
-			elseif Menu.Predict.Mode == 3 then
-				local CastPosition = VipPredictW:GetPrediction(unit)
-				local HitChance = VipPredictW:GetHitChance(unit)
-				if CastPosition ~= nil and HitChance > Menu.Predict.VIPHitChance then
-					SpellCast(_W,CastPosition)
-				end
+		-- Prodiction
+		elseif Menu.Predict.Mode == 2 then
+			local CastPosition = ProdictW:GetPrediction(unit)
+			if CastPosition ~= nil then
+				SpellCast(_W,CastPosition)
+			end
+			
+		-- VIP Prediction
+		elseif Menu.Predict.Mode == 3 then
+			local CastPosition = VipPredictW:GetPrediction(unit)
+			local HitChance = VipPredictW:GetHitChance(unit)
+			if CastPosition ~= nil and HitChance > Menu.Predict.VIPHitChance then
+				SpellCast(_W,CastPosition)
+			end
 		end
 	else
 		--Free prediction
-		local CastPosition = FreePredictW:GetPrediction(unit)
-		if CastPosition ~= nil then
-			SpellCast(_W,CastPosition)
+		if Menu.Predict.Mode == 1 then
+			local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.W.delay, Spell.W.width, Spell.W.range, Spell.W.speed,myHero)
+			if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
+				SpellCast(_W,CastPosition)
+			end
+				
+		-- Prodiction
+		elseif Menu.Predict.Mode == 2 then
+			local CastPosition = FreePredictW:GetPrediction(unit)
+			if CastPosition ~= nil then
+				SpellCast(_W,CastPosition)
+			end
 		end
 	end
 end
@@ -531,9 +549,22 @@ function ECircularCast(unit)
 		end
 	else
 		--Free Prediction
-		local CastPosition = FreePredictE:GetPrediction(unit)
-		if CastPosition ~= nil then
-			SpellCast(_E,CastPosition)
+		if Menu.Predict.Mode == 1 then
+			local mainCastPosition, mainHitChance, points, mainPosition = VP:GetCircularAOECastPosition(unit, Spell.E.delay, Spell.E.width, Spell.E.range, Spell.E.speed, myHero)
+			if mainCastPosition ~= nil and mainHitChance > 2 and points > 1 then
+				SpellCast(_E,mainCastPosition)
+			else
+				--VPredict already have MEC
+				local CastPosition,HitChance,points = VP:GetCircularCastPosition(unit, Spell.E.delay, Spell.E.width, Spell.E.range, Spell.E.speed,myHero)
+				if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
+					SpellCast(_E,CastPosition)
+				end
+			end
+		elseif Menu.Predict.Mode == 2 then
+			local CastPosition = FreePredictE:GetPrediction(unit)
+			if CastPosition ~= nil then
+				SpellCast(_E,CastPosition)
+			end
 		end
 	end
 end
@@ -567,14 +598,30 @@ function RLineCast(unit)
 		end
 	else
 		--Free prediction
-		local CastPosition = FreePredictR:GetPrediction(unit)
-		if TargetHaveBuff("stun",unit) or TargetHaveBuff("LuxLightBindingMis",unit) or TargetHaveBuff("suppression",unit)
-			or TargetHaveBuff("RunePrison",unit) or TargetHaveBuff("DarkBindingMissile",unit) or TargetHaveBuff("caitlynyordletrapdebuff",unit)
-			or TargetHaveBuff("CurseoftheSadMummy",unit) then
-			SpellCast(_R,unit)
-		end
-		if CastPosition ~= nil then
-			SpellCast(_R,CastPosition)
+		if Menu.Predict.Mode == 1 then
+			local isDashing, canHit, position = VP:IsDashing(unit, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, myHero)
+			local isImmobile, position2 = VP:IsImmobile(unit, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, myHero)
+			if isDashing and canHit and position ~= nil then
+				SpellCast(_R,position)
+			elseif isImmobile and position2 ~= nil then
+				SpellCast(_R,position2)
+			-- VPrediction
+			else 
+				local CastPosition,HitChance,Position = VP:GetLineCastPosition(unit, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed,myHero)
+				if CastPosition ~= nil and HitChance >= (Menu.Predict.VPHitChance - 1) then
+					SpellCast(_R,CastPosition)
+				end
+			end
+		elseif Menu.Predict.Mode == 2 then
+			local CastPosition = FreePredictR:GetPrediction(unit)
+			if TargetHaveBuff("stun",unit) or TargetHaveBuff("LuxLightBindingMis",unit) or TargetHaveBuff("suppression",unit)
+				or TargetHaveBuff("RunePrison",unit) or TargetHaveBuff("DarkBindingMissile",unit) or TargetHaveBuff("caitlynyordletrapdebuff",unit)
+				or TargetHaveBuff("CurseoftheSadMummy",unit) then
+				SpellCast(_R,unit)
+			end
+			if CastPosition ~= nil then
+				SpellCast(_R,CastPosition)
+			end
 		end
 	end
 end
@@ -740,7 +787,7 @@ function OnTick()
 		for i = 1, heroManager.iCount do
 			local hero = heroManager:GetHero(i)
 			if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) then
-				if VIP_USER then
+				if VIP_USER or (not VIP_USER and Menu.Predict.mode == 1) then
 					local isImmobile, position = VP:IsImmobile(hero, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, Spell.R.sourcePosition)
 					if isImmobile and position ~= nil and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) > hero.health ) then
 						SpellCast(_R,position)
@@ -769,7 +816,7 @@ function OnTick()
 	--}
 	
 	--{ Auto Use R/Ultimate if x enemy around
-	if VIP_USER then
+	if VIP_USER or (not VIP_USER and Menu.Predict.mode == 1) then
 		if Menu.Combo.Ult.AutoR > 1 then
 			local minTarget = Menu.Combo.Ult.AutoR - 2
 			for i = 1, heroManager.iCount do
