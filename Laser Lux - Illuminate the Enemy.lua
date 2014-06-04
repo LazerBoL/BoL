@@ -7,6 +7,10 @@
 (____/'`\__,_)(____/`\____)(_)      (____/'`\___/'(_/\_)     
 
 Changelog: 
+	1.03
+		-Fixed bug auto ulti
+		-Added auto ulti if killable
+		-Added toggle to turn-off auto pop E(hot-key: T)
 	1.02
 		-Combo now will use Q,AA,E,AA if possible
 		-Steal blue now will use Q/E if killable and when in range instead of only use ultimate:
@@ -20,7 +24,7 @@ Changelog:
 	1.00:
 		-Release
 --]]
-local currVersion = "1.02"
+local currVersion = "1.03"
 _G.Lux_Autoupdate = true
 
 if myHero.charName ~= "Lux" then return end
@@ -150,6 +154,7 @@ function OnLoad()
 		Menu.General:addParam("Farm","Farm/Jungle",SCRIPT_PARAM_ONKEYDOWN,false,string.byte("V"))
 		Menu.General:addParam("Steal1","Steal press",SCRIPT_PARAM_ONKEYDOWN,false,string.byte("Z"))
 		Menu.General:addParam("Steal2","Steal toggle",SCRIPT_PARAM_ONKEYTOGGLE,false,string.byte("N"))
+		Menu.General:addParam("toggleE","Turn off auto E",SCRIPT_PARAM_ONKEYTOGGLE,false,string.byte("T"))
 		--}
 		
 		--{ Target Selector
@@ -177,6 +182,7 @@ function OnLoad()
 			Menu.Combo.Ult:addParam("AutoR","Auto use R if can hit",SCRIPT_PARAM_LIST,3,{"None",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
 		end
 		Menu.Combo.Ult:addParam("AutoRStun","Auto use R on stun target",SCRIPT_PARAM_ONOFF,true)
+		Menu.Combo.Ult:addParam("AutoRKill","Auto use R if killable",SCRIPT_PARAM_ONOFF,true)
 		--}
 		
 		--{ Harass Settings
@@ -275,6 +281,7 @@ function OnLoad()
 		Menu.General:permaShow("Farm")
 		Menu.General:permaShow("Steal1")
 		Menu.General:permaShow("Steal2")
+		Menu.General:permaShow("toggleE")
 		Menu.Draw.Skill:permaShow("EInfo")
 		if VIP_USER then
 			Menu.Predict:permaShow("Mode")
@@ -627,7 +634,7 @@ function OnTick()
 	
 	--}
 	--{ Auto Pop E when enemy in range
-	if Menu.Extra.PopE then
+	if Menu.Extra.PopE and not Menu.General.toggleE then
 		for i = 1, heroManager.iCount do
 			local hero = heroManager:GetHero(i)
 			local radius = Spell.E.width + VP:GetHitBox(hero)
@@ -650,11 +657,11 @@ function OnTick()
 	end
 	-- On Gap closer
 	if VIP_USER then
-		if Menu.Combo.Lig.GapCloser and TARGET then
+		if Menu.Combo.Lig.GapCloser then
 			for i = 1, heroManager.iCount do
 				local hero = heroManager:GetHero(i)
 				if hero.team ~= myHero.team and ValidTarget(hero,400) then
-					local isDashing, canHit, position = VP:IsDashing(TARGET, Spell.Q.delay + 0.07 + GetLatency() / 2000, Spell.Q.width, Spell.Q.speed, myHero)
+					local isDashing, canHit, position = VP:IsDashing(hero, Spell.Q.delay + 0.07 + GetLatency() / 2000, Spell.Q.width, Spell.Q.speed, myHero)
 					if position ~= nil then
 						local isCol,ColTable = Col:GetCollision(myHero,position)
 						if #ColTable <= 1 then
@@ -735,7 +742,7 @@ function OnTick()
 			if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) then
 				if VIP_USER then
 					local isImmobile, position = VP:IsImmobile(hero, Spell.R.delay + 0.07 + GetLatency() / 2000, Spell.R.width, Spell.R.speed, Spell.R.sourcePosition)
-					if isImmobile and position ~= nil and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) ) then
+					if isImmobile and position ~= nil and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) > hero.health ) then
 						SpellCast(_R,position)
 					end
 				else
@@ -750,13 +757,24 @@ function OnTick()
 	end
 	--}
 	
+	--{ Auto Use R on killable target
+	if Menu.Combo.Ult.AutoRKill then
+		for i = 1, heroManager.iCount do
+			local hero = heroManager:GetHero(i)
+			if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) and getDmg("R",hero,myHero) > hero.health then
+				RLineCast(hero)
+			end
+		end
+	end
+	--}
+	
 	--{ Auto Use R/Ultimate if x enemy around
 	if VIP_USER then
 		if Menu.Combo.Ult.AutoR > 1 then
 			local minTarget = Menu.Combo.Ult.AutoR - 2
 			for i = 1, heroManager.iCount do
 				local hero = heroManager:GetHero(i)
-				if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) ) then
+				if hero.team ~= myHero.team and ValidTarget(hero,Spell.R.range) and ( CountAllyInRange(hero,800) >= 1 or getDmg("R",hero,myHero) > hero.health ) then
 					mainCastPosition, mainHitChance, maxHit, Positions = VP:GetLineAOECastPosition(hero, Spell.R.delay, Spell.R.width, Spell.R.range, Spell.R.speed, myHero)
 					if mainCastPosition ~= nil and maxHit > minTarget and mainHitChance >=2 then
 						SpellCast(_R,mainCastPosition)
