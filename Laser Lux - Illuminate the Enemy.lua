@@ -26,7 +26,7 @@ Changelog:
 	1.00:
 		-Release
 --]]
-local currVersion = "1.03"
+local currVersion = "1.05"
 _G.Lux_Autoupdate = true
 
 if myHero.charName ~= "Lux" then return end
@@ -422,7 +422,7 @@ end
 --{ Prediction Cast
 function SpellCast(spellSlot,castPosition)
 	if VIP_USER and Menu.Extra.Packet then
-		Packet("S_CAST", {spellId = spell, targetNetworkId = param.networkID}):send()
+		Packet("S_CAST", {spellId = spellSlot, fromX = castPosition.x, fromY = castPosition.z, toX = castPosition.x, toY = castPosition.z}):send()
 	else
 		CastSpell(spellSlot,castPosition.x,castPosition.z)
 	end
