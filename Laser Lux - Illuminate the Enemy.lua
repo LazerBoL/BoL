@@ -7,6 +7,8 @@
 (____/'`\__,_)(____/`\____)(_)      (____/'`\___/'(_/\_)     
 
 Changelog: 
+	1.05:
+		-Fix bug with packet cast
 	1.04:
 		-Add VPrediction for free user
 	1.03
