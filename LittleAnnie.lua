@@ -235,7 +235,7 @@ function GrabTargetInRange(rangeT)
 end
 
 function MaxRange()
-	if Menu.Combo.Flash and R:IsReady() then
+	if Menu.Combo.Flash and myHero:CanUseSpell(_FLASH) == READY then
 		return SpellData.R.range + 400
 	elseif R:IsReady() then
 		return SpellData.Q.range
@@ -326,12 +326,8 @@ function OnTick()
 	local TARGET = GrabTarget()
 	if ValidTarget(TARGET) then
 		--{ Combo
-		if Menu.General.Combo then
+		if Menu.General.Combo then	
 			OW:DisableAttacks()
-			if (not W:IsReady() and not Q:IsReady() and not( R:IsReady() and objR == nil) ) or DLib:IsKillable(TARGET, {_AA}) then
-				OW:EnableAttacks()
-			end
-			
 			if DLib:IsKillable(TARGET, MainCombo) and ComboManaUsage(MainCombo) then
 				ItemManager:CastOffensiveItems(TARGET)	
 				if Menu.Combo.Flash then
@@ -346,6 +342,9 @@ function OnTick()
 				CastSpell(_IGNITE, TARGET)
 			end
 			Combo(Menu.Combo.Q,Menu.Combo.W,Menu.Combo.E,Menu.Combo.R,TARGET)
+			if not (Q:IsReady() or W:IsReady() or (R:IsReady() and objR == nil)) then
+				OW:EnableAttacks()
+			end
 		end
 		--}
 		
