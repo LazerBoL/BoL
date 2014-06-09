@@ -1,7 +1,22 @@
+--[[
+ _     _ _   _   _         ___              _      
+| |   (_) | | | | |       / _ \            (_)     
+| |    _| |_| |_| | ___  / /_\ \_ __  _ __  _  ___ 
+| |   | | __| __| |/ _ \ |  _  | '_ \| '_ \| |/ _ \
+| |___| | |_| |_| |  __/ | | | | | | | | | | |  __/
+\_____/_|\__|\__|_|\___| \_| |_/_| |_|_| |_|_|\___|
+                                                  
+Changelog:
+	v0.002:
+		-Fix auto passive stacking that break recall.
+		-Change Auto tibber from "follow target" to "Attack target".
+	v0.001: Initial release
+--]]
+
 local annie_autoupdate = true
 local silentUpdate = false
 
-local version = 0.001
+local version = 0.002
 
 local scriptName = "LittleAnnie"
 
@@ -50,6 +65,12 @@ function AnnieData()
 	
 	maxQRWE = {1,2,1,3,1,4,1,2,1,2,4,2,2,3,3,4,3,3}
 	maxWRQE = {2,1,3,2,2,4,2,1,2,1,4,1,1,3,3,4,3,3}
+	
+	Recalling = false
+	
+	TWinduptime = 0
+	TAnimationTime = 0
+	TLastAttack = 0
 end
 
 function OnLoad()
@@ -117,8 +138,8 @@ function OnLoad()
 		
 	--Harass
 	Menu:addSubMenu("[ Annie : Harass ]","Harass")
-		Menu.Harass:addParam("Q","Use Q to harass",SCRIPT_PARAM_ONOFF,true)
-		Menu.Harass:addParam("W","Use W to harass",SCRIPT_PARAM_ONOFF,true)
+		Menu.Harass:addParam("Q","Use Q in combo",SCRIPT_PARAM_ONOFF,true)
+		Menu.Harass:addParam("W","Use W in combo",SCRIPT_PARAM_ONOFF,true)
 		
 	--Jungle/Farm Settings
 	Menu:addSubMenu("[ Annie : Farm/Jungle Settings ]","Farm")
@@ -137,7 +158,7 @@ function OnLoad()
 	Menu:addSubMenu("[ Annie : Automation Settings ]","Auto")
 		Menu.Auto:addParam("W","Auto W if can stun",SCRIPT_PARAM_LIST,3,{"No",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
 		Menu.Auto:addParam("R","Auto R if can stun",SCRIPT_PARAM_LIST,3,{"No",">0 targets",">1 targets",">2 targets",">3 targets",">4 targets"})
-		Menu.Auto:addParam("Tibbers","Auto command Tibbers to",SCRIPT_PARAM_LIST,1,{"No","Follow target","Follow Annie"})
+		Menu.Auto:addParam("Tibbers","Auto command Tibbers to",SCRIPT_PARAM_LIST,2,{"No","Attack target","Follow Annie"})
 		Menu.Auto:addParam("E","Auto shield",SCRIPT_PARAM_ONOFF,true)
 		Menu.Auto:addParam("Passive","Stacking passive when in fountain",SCRIPT_PARAM_ONOFF,true)
 	
@@ -394,6 +415,7 @@ function OnTick()
 end
 
 function OnTick5()
+	
 	--{ Packet cast
 	if VIP_USER then
 		Q.packetCast = Menu.Extra.Packet
@@ -408,17 +430,9 @@ function OnTick5()
 		--{ Tibber follow
 		if objR ~= nil then
 			if Menu.Auto.Tibbers == 2 then
-				if ValidTarget(TibberTarget) and GetDistanceSqr(objR,TibberTarget) > 125 * 125 then
-					SpellCast(_R,TibberTarget)				
-				else
-					EnemyMinion:update()
-					JungMinion:update()
-					if ValidTarget(EnemyMinion.objects[1]) and GetDistanceSqr(objR,EnemyMinion.objects[1]) > 125 * 125 then
-						SpellCast(_R,EnemyMinion.objects[1])
-					elseif ValidTarget(JungMinion.objects[1]) and GetDistanceSqr(objR,JungMinion.objects[1]) > 125 * 125 then
-						SpellCast(_R,JungMinion.objects[1])
-					else
-					R:Cast()
+				if ValidTarget(TibberTarget) then
+					if os.clock() + GetLatency()/2000 > TLastAttack + TAnimationTime+0.05 then
+						CastSpell(_R,TibberTarget.x,TibberTarget.z)
 					end
 				end
 			elseif Menu.Auto.Tibbers == 3 then
@@ -432,7 +446,7 @@ function OnTick5()
 			if InFountain() then
 				if E:IsReady() then E:Cast() end
 				if W:IsReady() then W:Cast(myHero.x,myHero.z)end
-			elseif myHero.mana == myHero.maxMana then
+			elseif myHero.mana == myHero.maxMana and not Recalling then
 				if E:IsReady() then E:Cast() end
 			end
 		end
@@ -478,8 +492,8 @@ function OnCreateObj(obj)
 	if obj.name:lower():find("annietibbers") and obj.name:lower():find("body") then
 		objR = obj
 	end
-	if obj.name:lower():find("annie") then
-		
+	if obj.name:find("TeleportHome") then
+		Recalling = true
 	end
 end
 
@@ -490,6 +504,9 @@ function OnDeleteObj(obj)
 	end
 	if obj.name:lower():find("annietibbers") and obj.name:lower():find("body") then
 		objR = nil
+	end
+	if obj.name:find("TeleportHome") or (Recalling == nil and obj.name == Recalling.name) then
+		Recalling = false
 	end
 end
 
@@ -510,5 +527,11 @@ function OnProcessSpell(unit,spell)
 		if E:IsReady() then
 			E:Cast()
 		end
+	end
+	
+	if unit.charName == "AnnieTibbers" and spell.name:lower():find("attack") then
+		TWinduptime = spell.windUpTime
+		TAnimationTime = spell.animationTime
+		TLastAttack = os.clock() - GetLatency()/2000
 	end
 end
