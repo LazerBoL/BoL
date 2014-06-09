@@ -1,5 +1,5 @@
 local annie_autoupdate = true
-local silentUpdate = true
+local silentUpdate = false
 
 local version = 0.001
 
