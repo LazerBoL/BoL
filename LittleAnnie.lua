@@ -117,8 +117,8 @@ function OnLoad()
 		
 	--Harass
 	Menu:addSubMenu("[ Annie : Harass ]","Harass")
-		Menu.Harass:addParam("Q","Use Q in combo",SCRIPT_PARAM_ONOFF,true)
-		Menu.Harass:addParam("W","Use W in combo",SCRIPT_PARAM_ONOFF,true)
+		Menu.Harass:addParam("Q","Use Q to harass",SCRIPT_PARAM_ONOFF,true)
+		Menu.Harass:addParam("W","Use W to harass",SCRIPT_PARAM_ONOFF,true)
 		
 	--Jungle/Farm Settings
 	Menu:addSubMenu("[ Annie : Farm/Jungle Settings ]","Farm")
