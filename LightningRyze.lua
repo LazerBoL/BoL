@@ -58,7 +58,7 @@ function OnLoad()
 	DM = DrawManager()
 	DLib = DamageLib()
 	--}
-	
+	Selector.Instance()
 	--{ Spell data
 	Q = Spell(_Q, SpellData.Q.range)
 	W = Spell(_W, SpellData.W.range)
