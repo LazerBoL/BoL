@@ -1,7 +1,15 @@
-local ryze_autoupdate = true
+--[[ Lightning Ryze - Let's go let's go
+	Changelog:
+		0.002:
+			-Fixed CastSpell error cause by ignite
+			-Fixed bug with long combo
+		0.001: Initial release
+--]]
+
+local ryze_autoupdate = false
 local silentUpdate = false
 
-local version = 0.001
+local version = 0.002
 
 local scriptName = "LightningRyze"
 
@@ -162,7 +170,12 @@ function OnLoad()
 	TickLimiter(OnTick1, 1)
 	
 	--{ Perma show
-	
+	Menu.Script:permaShow("Author")
+	Menu.General:permaShow("Combo")
+	Menu.General:permaShow("Harass")
+	Menu.General:permaShow("Farm")
+	Menu.Combo:permaShow("Mode")
+	Menu.Combo:permaShow("Ignite")
 	--}
 	
 	--{ All loaded
@@ -378,14 +391,20 @@ end
 function OnTick10()
 	local TARGET = GrabTarget()
 	OW:DisableAttacks()
+	if IsKeyDown(string.byte("X")) then
+		OW:EnableAttacks()
+	end
 	--{ Combo
+	
 	if Menu.General.Combo and ValidTarget(TARGET) then
 		
 		if Menu.Combo.Item then 
 			ItemManager:CastOffensiveItems(TARGET)
 		end
-		if Menu.Combo.Ignite and DLib:IsKillable(TARGET, MainCombo) then
-			CastSpell(_IGNITE, TARGET)
+		if Menu.Combo.Ignite and _IGNITE ~= nil then
+			if DLib:IsKillable(TARGET, MainCombo) then
+				CastSpell(_IGNITE, TARGET)
+			end
 		end
 		if Menu.Combo.Mode == 1 then
 			ComboMixed(Menu.Combo.R,TARGET)
@@ -419,7 +438,7 @@ function OnTick10()
 	
 	--{ Farm/Jungle
 	--Lane
-	if Menu.General.Farm or Menu.General.Farm2 then
+	if Menu.General.Farm then
 		OW:EnableAttacks()
 		if Menu.General.Combo or Menu.General.Harass then return end
 		--Lane
@@ -478,7 +497,7 @@ function OnTick10()
 	
 	--{ Extra
 	if Menu.Extra.AutoIgnite and ValidTarget(TARGET) then
-		if DLib:IsKillable(TARGET, {_IGNITE}) then
+		if _IGNITE ~= nil and DLib:IsKillable(TARGET, {_IGNITE}) then
 			CastSpell(_IGNITE, TARGET)
 		end
 	end
@@ -508,3 +527,4 @@ function OnProcessSpell(unit,spell)
 		end
 	end
 end
+
