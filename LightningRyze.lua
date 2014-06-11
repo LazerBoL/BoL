@@ -78,7 +78,7 @@ function OnLoad()
 	--}
 	
 	--{ Menu
-	Menu = scriptConfig("Lucky Ryze","LuckyRyze")
+	Menu = scriptConfig("Lightning Ryze","LightningRyze")
 	
 	--Author
 	Menu:addSubMenu("[ Ryze : Script Information ]","Script")
