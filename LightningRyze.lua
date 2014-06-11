@@ -399,7 +399,7 @@ function OnTick10()
 		if Menu.Combo.Item then 
 			ItemManager:CastOffensiveItems(TARGET)
 		end
-		if Menu.Combo.Ignite and DLib:IsKillable(TARGET, {_IGNITE}) then
+		if Menu.Combo.Ignite and DLib:IsKillable(TARGET, MainCombo) then
 			CastSpell(_IGNITE, TARGET)
 		end
 		if Menu.Combo.Mode == 1 then
