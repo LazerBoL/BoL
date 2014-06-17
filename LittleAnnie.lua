@@ -7,6 +7,8 @@
 \_____/_|\__|\__|_|\___| \_| |_/_| |_|_| |_|_|\___|
                                                   
 Changelog:
+	v0.003:
+		-Fix bug with auto cast ignite
 	v0.002:
 		-Fix auto passive stacking that break recall.
 		-Change Auto tibber from "follow target" to "Attack target".
@@ -338,8 +340,10 @@ function OnTick()
 						and GetDistanceSqr(myHero,position) <= (SpellData.R.range + 400) * (SpellData.R.range + 400)  then
 						CastSpell(_FLASH,realPos.x,realPos.z)
 					end
-				end		
-				CastSpell(_IGNITE, TARGET)
+			end	
+				if _IGNITE then
+					CastSpell(_IGNITE, TARGET)
+				end
 			end
 			Combo(Menu.Combo.Q,Menu.Combo.W,Menu.Combo.E,Menu.Combo.R,TARGET)
 			if not (Q:IsReady() or W:IsReady() or (R:IsReady() and objR == nil)) then
