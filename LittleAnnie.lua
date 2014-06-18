@@ -18,7 +18,7 @@ Changelog:
 local annie_autoupdate = true
 local silentUpdate = false
 
-local version = 0.002
+local version = 0.003
 
 local scriptName = "LittleAnnie"
 
